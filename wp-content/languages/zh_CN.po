@@ -2,18 +2,18 @@
 # This file is distributed under the same license as the WordPress package.
 msgid ""
 msgstr ""
-"Project-Id-Version: WordPress 4.9\n"
+"Project-Id-Version: WordPress 4.9.x\n"
 "Report-Msgid-Bugs-To: https://make.wordpress.org/polyglots/\n"
 "POT-Creation-Date: 2017-11-13 23:14:24+00:00\n"
-"PO-Revision-Date: 2017-11-15 21:16+0000\n"
+"PO-Revision-Date: 2018-07-09 13:58+0800\n"
 "Last-Translator: Jimmy Xu <me@jimmyxu.org>\n"
-"Language-Team: WordPress China\n"
+"Language-Team: 知更鸟 <zmingcx@126.com>\n"
 "Language: zh_CN\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
-"X-Generator: Poedit 2.0.4\n"
+"X-Generator: Poedit 1.8.2\n"
 
 #: wp-activate.php:78
 msgid "Activation Key Required"
@@ -255,7 +255,8 @@ msgid "%s comment awaiting moderation"
 msgid_plural "%s comments awaiting moderation"
 msgstr[0] "%s条评论待审"
 
-#: wp-includes/admin-bar.php:830 wp-includes/class-wp-customize-widgets.php:412
+#: wp-includes/admin-bar.php:830
+#: wp-includes/class-wp-customize-widgets.php:412
 #: wp-includes/functions.php:3713
 msgid "Widgets"
 msgstr "小工具"
@@ -351,6 +352,37 @@ msgstr "标签："
 #: wp-includes/class-wp-xmlrpc-server.php:6326
 msgid "A valid URL was not provided."
 msgstr "URL无效。"
+
+#: wp-includes/post.php:787
+msgid "Completed"
+msgstr "完成"
+
+#: wp-includes/post.php:785
+msgid "Confirmed"
+msgstr "确认"
+
+#: wp-includes/post.php:784
+msgid "Pending"
+msgstr "待审"
+
+#: wp-includes/post.php:306
+msgctxt "request status"
+msgid "Completed"
+msgstr "完了"
+
+#: wp-includes/post.php:786
+msgid "Failed"
+msgstr "失敗"
+
+#: wp-includes/post.php:292
+msgctxt "request status"
+msgid "Confirmed"
+msgstr "确认"
+
+#: wp-includes/post.php:285
+msgctxt "request status"
+msgid "Pending"
+msgstr "保留中"
 
 #: wp-includes/class-http.php:267
 msgid "User has blocked requests through HTTP."
@@ -826,6 +858,14 @@ msgid ""
 "If you add a video, the image will be used as a fallback while the video "
 "loads."
 msgstr "如果您加入视频，此图片将在视频载入时候补显示。"
+
+#: wp-includes/user.php:3211
+msgid "Export Personal Data"
+msgstr "导出个人数据"
+
+#: wp-includes/user.php:3214
+msgid "Erase Personal Data"
+msgstr "清除个人资料"
 
 #. translators: 1: .mp4, 2: header size in pixels
 #: wp-includes/class-wp-customize-manager.php:4971
@@ -1917,7 +1957,8 @@ msgstr "编码"
 msgid "Description"
 msgstr "图像描述"
 
-#: wp-includes/class-wp-editor.php:1083 wp-includes/theme-compat/sidebar.php:27
+#: wp-includes/class-wp-editor.php:1083
+#: wp-includes/theme-compat/sidebar.php:27
 msgid "Author"
 msgstr "作者"
 
