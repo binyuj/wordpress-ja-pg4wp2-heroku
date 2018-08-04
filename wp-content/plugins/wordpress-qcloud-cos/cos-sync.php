@@ -1,13 +1,14 @@
 <?php
 /*
-Plugin Name: 腾讯云COS同步插件
+Plugin Name: 腾讯云对象存储服务COS
 Plugin URI: https://qq52o.me/2130.html
 Description: 使用腾讯云对象存储服务 COS 作为附件存储空间。（This is a plugin that uses QCloud Cloud Object Service for attachments remote saving.）
-Version: 1.0
-Author: 沈唁志
+Version: 1.2
+Author: sy-records
 Author URI: https://qq52o.me
 License: GPL v3
  */
+error_reporting(0);
 require_once 'sdk/include.php';
 use Qcloudcos\Cosapi;
 if (!defined('WP_PLUGIN_URL')) {
@@ -22,7 +23,7 @@ define('COS_BASEFOLDER', plugin_basename(dirname(__FILE__)));
 register_activation_hook(__FILE__, 'cos_set_options');
 
 // 初始化选项
-function cosSetOptions() {
+function cos_set_options() {
 	$options = array(
 		'bucket' => "",
 		'regional' => 'gz',
@@ -48,7 +49,7 @@ Cosapi::setRegion($regional);
  * @return bool
  */
 
-function _file_upload($object, $file, $opt = array()) {
+function cos_file_upload($object, $file, $opt = array()) {
 	//如果文件不存在，直接返回FALSE
 	if (!@file_exists($file)) {
 		return FALSE;
@@ -59,16 +60,16 @@ function _file_upload($object, $file, $opt = array()) {
 	$cos_bucket = esc_attr($cos_options['bucket']);
 	if (@file_exists($file)) {
 		$dirname = dirname($object);
-		_create_folder($cos_bucket, $dirname);
+		cos_create_folder($cos_bucket, $dirname);
 		$ret = Cosapi::upload($cos_bucket, $file, $object);
 	} else {
 		return FALSE;
 	}
 	/*
-echo $object.'<br>';
-echo $file.'<br>';
-echo $dirname.'<br>';
- */
+		    echo $object.'<br>';
+		    echo $file.'<br>';
+		    echo $dirname.'<br>';
+	*/
 }
 
 /**
@@ -76,7 +77,7 @@ echo $dirname.'<br>';
  * @param $cos_bucket
  * @param $dir
  */
-function _create_folder($cos_bucket, $dir) {
+function cos_create_folder($cos_bucket, $dir) {
 	$data = Cosapi::statFolder($cos_bucket, $dir . '/');
 	if ($data['code'] == -166) {
 		$dir_array = explode('/', $dir);
@@ -96,7 +97,7 @@ function _create_folder($cos_bucket, $dir) {
  * 是否需要删除本地文件
  * @return bool
  */
-function _is_delete_local_file() {
+function cos_is_delete_local_file() {
 	$cos_options = get_option('cos_options', TRUE);
 	return (esc_attr($cos_options['nolocalsaving']) == 'true');
 }
@@ -106,7 +107,7 @@ function _is_delete_local_file() {
  * @param $file 本地文件路径
  * @return bool
  */
-function _delete_local_file($file) {
+function cos_delete_local_file($file) {
 	try {
 		//文件不存在
 		if (!@file_exists($file)) {
@@ -129,7 +130,7 @@ function _delete_local_file($file) {
  * @param $metadata
  * @return array()
  */
-function uploadAttachments($metadata) {
+function cos_upload_attachments($metadata) {
 	$wp_uploads = wp_upload_dir();
 	//生成object在OSS中的存储路径
 	if (get_option('upload_path') == '.') {
@@ -146,24 +147,24 @@ function uploadAttachments($metadata) {
 	$opt = array('Content-Type' => $metadata['type']);
 
 	//执行上传操作
-	_file_upload('/' . $object, $file, $opt);
+	cos_file_upload('/' . $object, $file, $opt);
 
 	//如果不在本地保存，则删除本地文件
-	if (_is_delete_local_file()) {
-		_delete_local_file($file);
+	if (cos_is_delete_local_file()) {
+		cos_delete_local_file($file);
 	}
 	return $metadata;
 }
 
 //避免上传插件/主题时出现同步到COS的情况
 if (substr_count($_SERVER['REQUEST_URI'], '/update.php') <= 0) {
-	add_filter('wp_handle_upload', 'upload_attachments', 50);
+	add_filter('wp_handle_upload', 'cos_upload_attachments', 50);
 }
 
 /**
  * 上传图片的缩略图
  */
-function uploadThumbs($metadata) {
+function cos_upload_thumbs($metadata) {
 	//上传所有缩略图
 	if (isset($metadata['sizes']) && count($metadata['sizes']) > 0) {
 		//获取COS插件的配置信息
@@ -201,11 +202,11 @@ function uploadThumbs($metadata) {
 			$opt = array('Content-Type' => $val['mime-type']);
 
 			//执行上传操作
-			_file_upload($object, $file, $opt);
+			cos_file_upload($object, $file, $opt);
 
 			//如果不在本地保存，则删除
 			if ($is_delete_local_file) {
-				_delete_local_file($file);
+				cos_delete_local_file($file);
 			}
 
 		}
@@ -215,13 +216,13 @@ function uploadThumbs($metadata) {
 
 //避免上传插件/主题时出现同步到COS的情况
 if (substr_count($_SERVER['REQUEST_URI'], '/update.php') <= 0) {
-	add_filter('wp_generate_attachment_metadata', 'upload_thumbs', 100);
+	add_filter('wp_generate_attachment_metadata', 'cos_upload_thumbs', 100);
 }
 
 /**
  * 删除远程服务器上的单个文件
  */
-function deleteRemoteFile($file) {
+function cos_delete_remote_file($file) {
 	//获取WP配置信息
 	$cos_options = get_option('cos_options', TRUE);
 	$cos_bucket = esc_attr($cos_options['bucket']);
@@ -237,10 +238,10 @@ function deleteRemoteFile($file) {
 	}
 	return $file;
 }
-add_action('wp_delete_file', 'delete_remote_file', 100);
+add_action('wp_delete_file', 'cos_delete_remote_file', 100);
 
 // 当upload_path为根目录时，需要移除URL中出现的“绝对路径”
-function modefiyImgUrl($url, $post_id) {
+function modefiy_img_url($url, $post_id) {
 	$home_path = str_replace(array('/', '\\'), array('', ''), get_home_path());
 	$url = str_replace($home_path, '', $url);
 	return $url;
@@ -250,7 +251,7 @@ if (get_option('upload_path') == '.') {
 	add_filter('wp_get_attachment_url', 'modefiy_img_url', 30, 2);
 }
 
-function readDirQueue($dir) {
+function cos_read_dir_queue($dir) {
 	if (isset($dir)) {
 		$files = array();
 		$queue = array($dir);
@@ -287,7 +288,7 @@ function readDirQueue($dir) {
 }
 
 // 在插件列表页添加设置按钮
-function cosPluginActionLinks($links, $file) {
+function cos_plugin_action_links($links, $file) {
 	if ($file == plugin_basename(dirname(__FILE__) . '/cos-sync.php')) {
 		$links[] = '<a href="options-general.php?page=' . COS_BASEFOLDER . '/cos-sync.php">' . 设置 . '</a>';
 	}
@@ -296,14 +297,14 @@ function cosPluginActionLinks($links, $file) {
 add_filter('plugin_action_links', 'cos_plugin_action_links', 10, 2);
 
 // 在导航栏“设置”中添加条目
-function cosAddSettingPage() {
+function cos_add_setting_page() {
 	add_options_page('腾讯云COS设置', '腾讯云COS设置', 'manage_options', __FILE__, 'cos_setting_page');
 }
 
 add_action('admin_menu', 'cos_add_setting_page');
 
 // 插件设置页面
-function cosSettingPage() {
+function cos_setting_page() {
 	if (!current_user_can('manage_options')) {
 		wp_die('Insufficient privileges!');
 	}
@@ -324,13 +325,13 @@ function cosSettingPage() {
 		$cos_options = get_option('cos_options', TRUE);
 		$cos_bucket = esc_attr($cos_options['bucket']);
 
-		$synv = readDirQueue(get_home_path() . get_option('upload_path'));
+		$synv = cos_read_dir_queue(get_home_path() . get_option('upload_path'));
 		$i = 0;
 		foreach ($synv as $k) {
 			$ret = Cosapi::stat($cos_bucket, $k['x']);
 			if ($ret['code'] != 0) {
 				$i++;
-				_file_upload($k['x'], $k['j']);
+				cos_file_upload($k['x'], $k['j']);
 			}
 		}
 		echo '<div class="updated"><p><strong>本次操作成功同步' . $i . '个文件</strong></p></div>';
@@ -394,7 +395,7 @@ function cosSettingPage() {
                             <option value="gz" <?php if ($cos_regional == 'gz') {echo ' selected="selected"';}?>>华南</option>
                             <option value="sh" <?php if ($cos_regional == 'sh') {echo ' selected="selected"';}?>>华中</option>
                             <option value="tj" <?php if ($cos_regional == 'tj') {echo ' selected="selected"';}?>>华北</option>
-                            <option value="sh" <?php if ($cos_regional == 'sh') {echo ' selected="selected"';}?>>华东</option>
+							<option value="sh" <?php if ($cos_regional == 'sh') {echo ' selected="selected"';}?>>华东</option>
                         </select>
                         <p>请选择您创建的 <code>bucket</code> 所在地域</p>
                     </td>
