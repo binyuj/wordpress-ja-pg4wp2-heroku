@@ -1307,3 +1307,17 @@ function kratos_admin_footer_text($text) {
 }
 
 add_filter('admin_footer_text', 'kratos_admin_footer_text');
+
+/*
+让 WordPress 显示查询次数、查询时间及消耗内存
+http://www.wpxzt.com
+*/
+function performance( $visible = true ) {
+	$stat = sprintf(  '%d 次查询 | 用时 %.3f 秒 | 消耗 %.2fMB 内存',
+		get_num_queries(),
+		timer_stop( 0, 3 ),
+		memory_get_peak_usage() / 1024 / 1024
+	);
+	echo $visible ? $stat : "<!-- {$stat} -->" ;
+}
+
