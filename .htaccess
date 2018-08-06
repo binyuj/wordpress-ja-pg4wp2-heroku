@@ -26,6 +26,6 @@ Require all denied
 SetEnv TZ Asia/Shanghai
 
 <IfModule mod_deflate.c>
-AddOutputFilterByType DEFLATE text/html text/css text/plain text/xml application/json application/x-httpd-php application/javascript
+AddOutputFilterByType DEFLATE text/html text/css text/plain text/xml application/json application/x-httpd-php text/javascript application/javascript
 </IfModule>
 
