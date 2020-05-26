@@ -91,25 +91,27 @@
 		$pg_connstr = $GLOBALS['pg4wp_connstr'].' dbname='.$dbname;
 
 		// Note:  pg_connect returns existing connection for same connstr
-		$GLOBALS['pg4wp_conn'] = pg_connect($pg_connstr);
-		
-		if( $GLOBALS['pg4wp_conn'])
-		{
-			$ver = pg_version($GLOBALS['pg4wp_conn']);
-			if( isset($ver['server']))
-				$GLOBALS['pg4wp_version'] = $ver['server'];
-		}
-		
+		$GLOBALS['pg4wp_conn'] = $conn = pg_connect($pg_connstr);
+
+		if( !$conn)
+			return $conn;
+
+		$ver = pg_version($conn);
+		if( isset($ver['server']))
+			$GLOBALS['pg4wp_version'] = $ver['server'];
+
 		// Now we should be connected, we "forget" about the connection parameters (if this is not a "test" connection)
 		if( !defined('WP_INSTALLING') || !WP_INSTALLING)
 			$GLOBALS['pg4wp_connstr'] = '';
 		
 		// Execute early transmitted commands if needed
-		if( isset($GLOBALS['pg4wp_pre_sql']) && !empty($GLOBALS['pg4wp_pre_sql']))
+		if( !empty($GLOBALS['pg4wp_pre_sql']))
 			foreach( $GLOBALS['pg4wp_pre_sql'] as $sql2run)
 				wpsql_query( $sql2run);
 		
-		return $GLOBALS['pg4wp_conn'];
+		pg4wp_init($conn);
+
+		return $conn;
 	}
 
 	function wpsql_fetch_array($result)
@@ -196,6 +198,20 @@
 		return $data;
 	}
 	
+	// Convert MySQL FIELD function to CASE statement
+	// https://dev.mysql.com/doc/refman/5.7/en/string-functions.html#function_field
+	// Other implementations:  https://stackoverflow.com/q/1309624
+	function pg4wp_rewrite_field($matches)
+	{
+		$case = 'CASE ' . trim($matches[1]);
+		$comparands = explode(',', $matches[2]);
+		foreach($comparands as $i => $comparand) {
+			$case .= ' WHEN ' . trim($comparand) . ' THEN ' . ($i + 1);
+		}
+		$case .= ' ELSE 0 END';
+		return $case;
+	}
+
 	function pg4wp_rewrite( $sql)
 	{
 		// Note:  Can be called from constructor before $wpdb is set
@@ -279,8 +295,15 @@
 			$pattern = '/DATE_ADD[ ]*\(([^,]+),([^\)]+)\)/';
 			$sql = preg_replace( $pattern, '($1 + $2)', $sql);
 
+			$pattern = '/FIELD[ ]*\(([^\),]+),([^\)]+)\)/';
+			$sql = preg_replace_callback( $pattern, 'pg4wp_rewrite_field', $sql);
+
 			$pattern = '/GROUP_CONCAT\(([^()]*(\(((?>[^()]+)|(?-2))*\))?[^()]*)\)/x';
 			$sql = preg_replace( $pattern, "string_agg($1, ',')", $sql);
+
+			// Convert MySQL RAND function to PostgreSQL RANDOM function
+			$pattern = '/RAND[ ]*\([ ]*\)/';
+			$sql = preg_replace( $pattern, 'RANDOM()', $sql);
 			
 			// UNIX_TIMESTAMP in MYSQL returns an integer
 			$pattern = '/UNIX_TIMESTAMP\(([^\)]+)\)/';
@@ -327,6 +350,18 @@
 			if( isset($wpdb) && false !== strpos( $sql, $wpdb->comments))
 				$sql = str_replace(' comment_id ', ' comment_ID ', $sql);
 
+			// MySQL treats a HAVING clause without GROUP BY like WHERE
+			if( false !== strpos($sql, 'HAVING') && false === strpos($sql, 'GROUP BY'))
+			{
+				if( false === strpos($sql, 'WHERE'))
+					$sql = str_replace('HAVING', 'WHERE', $sql);
+				else
+				{
+					$pattern = '/WHERE\s+(.*?)\s+HAVING\s+(.*?)(\s*(?:ORDER|LIMIT|PROCEDURE|INTO|FOR|LOCK|$))/';
+					$sql = preg_replace( $pattern, 'WHERE ($1) AND ($2) $3', $sql);
+				}
+			}
+
 			// MySQL allows integers to be used as boolean expressions
 			// where 0 is false and all other values are true.
 			//
@@ -364,10 +399,6 @@
 			$pattern = '/(,|\s)[ ]*([^ \']*ID[^ \']*)[ ]*=/';
 			$sql = preg_replace( $pattern, '$1 "$2" =', $sql);
 			
-			// For when update wp_options violates not-null constraint error
-			$pattern = '/option_value = NULL/';
-			$sql = preg_replace( $pattern, 'option_value = 0', $sql);
-
 			// This will avoid modifications to anything following ' SET '
 			list($sql,$end) = explode( ' SET ', $sql, 2);
 			$end = ' SET '.$end;
@@ -504,9 +535,9 @@
 		$pattern = '/AND meta_value = (-?\d+)/';
 		$sql = preg_replace( $pattern, 'AND meta_value = \'$1\'', $sql);
 
-		// for wp-cron error "No operator matches the given name and argument type(s)."
-		$pattern = '/AND meta_value < (-?\d+)/';
-		$sql = preg_replace( $pattern, 'AND meta_value < \'$1\'', $sql);
+        // Add type cast for meta_value field when it's compared to number
+        $pattern = '/AND meta_value < (\d+)/';
+        $sql = preg_replace($pattern, 'AND meta_value::bigint < $1', $sql);
 		
 		// Generic "INTERVAL xx YEAR|MONTH|DAY|HOUR|MINUTE|SECOND" handler
 		$pattern = '/INTERVAL[ ]+(\d+)[ ]+(YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)/';
@@ -579,6 +610,35 @@
 				error_log( '['.microtime(true)."] $sql\n---------------------\n", 3, PG4WP_LOG.'pg4wp_unmodified.log');
 		}
 		return $sql;
+	}
+
+	// Database initialization
+	function pg4wp_init()
+	{
+		// Provide (mostly) MySQL-compatible field function
+		// Note:  MySQL accepts heterogeneous argument types.  No easy fix.
+		//        Can define version with typed first arg to cover some cases.
+		// Note:  ROW_NUMBER+unnest doesn't guarantee order, but is simple/fast.
+		//        If it breaks, try https://stackoverflow.com/a/8767450
+		$result = pg_query(<<<SQL
+CREATE OR REPLACE FUNCTION field(anyelement, VARIADIC anyarray)
+	RETURNS BIGINT AS
+$$
+SELECT rownum
+FROM (SELECT ROW_NUMBER() OVER () AS rownum, elem
+	FROM unnest($2) elem) numbered
+WHERE numbered.elem = $1
+UNION ALL
+SELECT 0
+$$
+	LANGUAGE SQL IMMUTABLE;
+SQL
+);
+		if( (PG4WP_DEBUG || PG4WP_LOG_ERRORS) && $result === false )
+		{
+			$err = pg_last_error();
+			error_log('['.microtime(true)."] Error creating MySQL-compatible field function: $err\n", 3, PG4WP_LOG.'pg4wp_errors.log');
+		}
 	}
 
 /*
