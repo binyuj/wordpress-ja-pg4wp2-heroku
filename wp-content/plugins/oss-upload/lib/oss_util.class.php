@@ -1,20 +1,9 @@
 <?php
-require_once dirname(dirname(__FILE__)).DIRECTORY_SEPARATOR.'thirdparty'.DIRECTORY_SEPARATOR.'xml2array.class.php';
-
 // EXCEPTIONS
 /**
  * OSS异常类，继承自基类
  */
 class OSS_Exception extends Exception {}
-class body
-{
-    public $Part;
-}
-class Part
-{
-    public $PartNumber;
-    public $ETag;
-}
 class OSSUtil
 {
     const OSS_CONTENT = 'content';
@@ -242,7 +231,7 @@ class OSSUtil
      */
     public static function validate_content($options){
         if(isset($options[self::OSS_CONTENT])){
-            if($options[self::OSS_CONTENT] == '' || !is_string($options[self::OSS_CONTENT])){
+            if(!is_string($options[self::OSS_CONTENT])){
                 throw new OSS_Exception(OSS_INVALID_HTTP_BODY_CONTENT,'-600');
             }
         }else{

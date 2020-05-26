@@ -1,41 +1,15 @@
 <?php
 /**
  * OSS(Open Storage Services) PHP SDK 
+ * From: aliyun-oss-sdk-php/1.1.7 @xiaobing/20150311
+ * Wrap: Link (playes@qq.com) 
  */
-//设置默认时区
-//date_default_timezone_set('Asia/Shanghai');
 
-//检测API路径
-if(!defined('OSS_API_PATH'))
-    define('OSS_API_PATH', dirname(__FILE__));
-
-//加载conf.inc.php文件,里面保存着OSS的地址以及用户访问的ID和KEY
-//require_once OSS_API_PATH.DIRECTORY_SEPARATOR.'conf.inc.php';
-//是否记录日志
-define('ALI_LOG', TRUE);
-
-//自定义日志路径，如果没有设置，则使用系统默认路径，在./logs/
-//define('ALI_LOG_PATH','');
-
-//是否显示LOG输出
-define('ALI_DISPLAY_LOG', TRUE);
-define('ALI_LANG', 'zh');
-
-require_once OSS_API_PATH.DIRECTORY_SEPARATOR.'lib'.DIRECTORY_SEPARATOR.'requestcore'.DIRECTORY_SEPARATOR.'requestcore.class.php';
-require_once OSS_API_PATH.DIRECTORY_SEPARATOR.'util'.DIRECTORY_SEPARATOR.'mimetypes.class.php';
-require_once OSS_API_PATH.DIRECTORY_SEPARATOR.'util'.DIRECTORY_SEPARATOR.'oss_util.class.php';
-//检测语言包
-if(file_exists(OSS_API_PATH.DIRECTORY_SEPARATOR.'lang'.DIRECTORY_SEPARATOR.ALI_LANG.'.inc.php')){
-    require_once OSS_API_PATH.DIRECTORY_SEPARATOR.'lang'.DIRECTORY_SEPARATOR.ALI_LANG.'.inc.php';
-}else{
-    throw new OSS_Exception(OSS_LANG_FILE_NOT_EXIST);
-}
-
-//定义软件名称，版本号等信息
-define('OSS_NAME', 'aliyun-oss-sdk-php');
-define('OSS_VERSION', '1.1.7');
-define('OSS_BUILD', '20150311');
-define('OSS_AUTHOR', 'xiaobing');
+if(!defined('NOT_SET_OSS_ACCESS_ID')) require_once('zh.inc.php');
+if(!class_exists('OSSMimeTypes')) require_once('mimetypes.class.php');
+if(!class_exists('OSSUtil')) require_once('oss_util.class.php');
+if(!class_exists('RequestCore')) require_once('requestcore.class.php');
+if(!class_exists('XML2Array')) require_once('xml2array.class.php');
 
 //检测get_loaded_extensions函数是否被禁用。由于有些版本把该函数禁用了，所以先检测该函数是否存在。
 if(function_exists('get_loaded_extensions')){
@@ -61,7 +35,8 @@ if(function_exists('get_loaded_extensions')){
  * @author xiaobing
  * @since 2012-05-31
  */
-class ALIOSS{
+
+class OU_ALIOSS{
 
     //for Wrapper @XiaoMac.com
     public function setAuth($access_id, $access_key){
@@ -613,6 +588,7 @@ class ALIOSS{
     public function upload_file_by_content($bucket, $object, $options = NULL){
         $this->precheck_common($bucket, $object, $options);
 
+        if(!isset($options[self::OSS_CONTENT])) $options[self::OSS_CONTENT] = '';//empty allowed
         //内容校验
         OSSUtil::validate_content($options);
         $content_type = $this->get_mime_type($object);
@@ -1180,49 +1156,50 @@ class ALIOSS{
      * @return bool 
      * @throws OSS_Exception
      */
-    public function create_mtu_object_by_dir($bucket, $dir, $recursive = false, $exclude = ".|..|.svn", $options = null){
+    public function create_mtu_object_by_dir($bucket, $dir, $recursive = false, $exclude = ".|..|.svn|.git", $options = null){
         $this->precheck_common($bucket, NULL, $options, false);
         //Windows系统下进行转码
         $dir = OSSUtil::encoding_path($dir);
-        //判断是否目录
-        if(!is_dir($dir)){
-            throw new OSS_Exception($dir.' is not a directory, please check it');
-        }
-
+        if(!is_dir($dir)) throw new OSS_Exception($dir.' 并非目录，请确认。');
         $file_list_array = $this->read_dir($dir, $exclude, $recursive);
+        if(empty($file_list_array)) throw new OSS_Exception($dir.' 目录为空。');
 
-
-        if(empty($file_list_array)){
-            throw new OSS_Exception($dir.' is empty...');
-        }
-
-        $is_upload_ok = true;
         $index = 1;
+        $upload = oss_upload_dir(wp_get_upload_dir());
+        $basedir = explode('/', substr($upload['basedir'].'/', 6), 2);
 
         foreach ($file_list_array as $k=>$item){
-            echo $index++.". ";
-            echo "Multiupload file ".$item['path']." ";
+            echo $index++.". ".$item['path']." - ";
             if (is_dir($item['path'])) {
-                echo " skipped, because it is directory...\n";
-            }
-            else {
+                echo "忽略目录。<br/>\n";
+                flush();
+            }else{
                 $options = array(
                     self::OSS_FILE_UPLOAD => $item['path'],
                     self::OSS_PART_SIZE => self::OSS_MIN_PART_SIZE,
-                );          
-
-                $response = $this->create_mpu_object($bucket, $item['file'], $options);
+                );
+                $ossFile = "oss://{$bucket}/{$basedir[1]}".rawurlencode($item['file']);
+                if(file_exists($ossFile)){//检查文件是否相同，是则跳过，这样可以多次重复执行该功能
+                    $info_ = self::get_object_meta($bucket, $basedir[1].$item['file']);
+                    $ossMd5 = isset($info_->header['content-md5']) ? $info_->header['content-md5'] : false;
+                    $ossLen = isset($info_->header['content-length']) ? $info_->header['content-length'] : false;
+                    if(($ossLen && $ossLen==filesize($item['path'])) || ($ossMd5 && $ossMd5==base64_encode(md5_file($item['path'], true)))){
+                        echo "<font color=gray>已存在。</font><br/>\n";
+                        flush();
+                        continue;
+                    }
+                }
+                $response = $this->create_mpu_object($bucket, $basedir[1].$item['file'], $options);
                 if($response->isOK()){
-                    echo " successful..\n";
-                } 
-                else {
-                    echo " failed..\n";
-                    $is_upload_ok = false;
-                    continue;
+                    echo "<font color=green>上传成功。</font><br/>\n";
+                    flush();
+                }else {
+                    echo "<font color=red>上传失败。</font><br/>\n";
+                    flush();
                 }
             }
         }
-        return $is_upload_ok;
+        return true;
     }
 
     /**
@@ -1575,7 +1552,7 @@ class ALIOSS{
     private function get_mime_type($object) {
         $extension = explode('.', $object);
         $extension = array_pop($extension);
-        $mime_type = MimeTypes::get_mimetype(strtolower($extension));
+        $mime_type = OSSMimeTypes::get_mimetype(strtolower($extension));
         return $mime_type;
     }
 
@@ -1586,10 +1563,11 @@ class ALIOSS{
      * @param bool $recursive
      * @return array
      */
-    public function read_dir($dir, $exclude = ".|..|.svn", $recursive = false){
+    public function read_dir($dir, $exclude = ".|..|.svn|.git", $recursive = false){
         $file_list_array = array(); 
-        $base_path=$dir; 
-        $exclude_array = explode("|", $exclude); 
+        $base_path = $dir; 
+        if(empty($exclude)) $exclude = '.|..|.svn|.git';
+        $exclude_array = explode("|", $exclude);
         // filter out "." and ".."
         $exclude_array = array_unique(array_merge($exclude_array,array('.','..'))); 
 
@@ -1597,18 +1575,18 @@ class ALIOSS{
             foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir)) as $new_file)
             {
                 if ($new_file->isDir()) continue;
-                    echo "$new_file\n";
-                    $object = str_replace($base_path, '', $new_file);
-                    if(!in_array(strtolower($object), $exclude_array)){ 
-                        $object = ltrim($object, '/');
-                        if (is_file($new_file)){ 
-                            $key = md5($new_file.$object, false);
-                            $file_list_array[$key] = array('path' => $new_file,'file' => $object,); 
-                        } 
-                    }
+                //echo "$new_file\n";
+                $object = str_replace($base_path, '', $new_file);
+                if(!in_array(strtolower($object), $exclude_array)){ 
+                    $object = ltrim($object, '/');
+                    if (is_file($new_file)){ 
+                        if(stripos($object, '.DS_Store') !== false) continue; 
+                        $key = md5($new_file.$object, false);
+                        $file_list_array[$key] = array('path' => $new_file,'file' => $object,); 
+                    } 
+                }
             }
         }
-        /*
         else if($handle = @opendir($dir)){ 
             while ( false !== ($file = @readdir($handle))){                 
                 if(!in_array(strtolower($file), $exclude_array)){ 
@@ -1622,8 +1600,8 @@ class ALIOSS{
                     } 
                 } 
             } 
-            closedir($handle);        
-        }*/       
+            @closedir($handle);        
+        }
         return $file_list_array; 
     } 
 
@@ -1767,7 +1745,7 @@ class ALIOSS{
 
         //创建请求
         $request = new RequestCore($this->request_url);
-        $user_agent = OSS_NAME."/".OSS_VERSION." (".php_uname('s')."/".php_uname('r')."/".php_uname('m').";".PHP_VERSION.")";
+        $user_agent = "aliyun-oss-sdk-php/1.1.7 (".php_uname('s')."/".php_uname('r')."/".php_uname('m').";".PHP_VERSION.")";
         $request->set_useragent($user_agent);
 
         // Streaming uploads
@@ -2002,10 +1980,6 @@ class ALIOSS{
     /*%******************************************************************************************************%*/
     const DEFAULT_OSS_HOST = 'oss.aliyuncs.com';
     const DEFAULT_OSS_ENDPOINT = 'oss.aliyuncs.com';
-    const NAME = OSS_NAME;
-    const BUILD = OSS_BUILD;
-    const VERSION = OSS_VERSION;
-    const AUTHOR = OSS_AUTHOR;
     //OSS 内部常量
     const OSS_BUCKET = 'bucket';
     const OSS_OBJECT = 'object';
@@ -2104,7 +2078,6 @@ class ALIOSS{
 
     /*%******************************************************************************************%*/
     //是否使用SSL
-    public $version = OSS_VERSION;
     protected $use_ssl = false;
     //是否使用debug模式
     private $debug_mode = true;
